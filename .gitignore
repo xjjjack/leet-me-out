@@ -4,3 +4,23 @@ release/
 .local-data/
 *.log
 .DS_Store
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local browser profiles, password hashes, and crash dumps
+/settings.json
+/user-data/
+/profiles/
+Cookies
+Cookies-journal
+Login Data
+Login Data-journal
+*.dmp
