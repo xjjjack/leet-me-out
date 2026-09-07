@@ -1,65 +1,44 @@
 # Leet Me Out
 
-Freedom is one accepted submission away.
+A Windows-first Electron + TypeScript practice app. Opens a random LeetCode problem; previously solved questions count when submitted again.
 
-A Windows-first Electron + TypeScript desktop app that opens LeetCode for a practice rep. The code also targets macOS; Mac behavior has not yet been tested.
+## Run and build
 
-## Run locally
-
-Use Node.js 22.12 or newer.
+Node.js 22.12 or newer is required.
 
 ```sh
 npm install
 npm start
-```
-
-## What the preview does
-
-- Opens a random problem in an isolated Chromium browser, with persistent LeetCode login.
-- Lets you browse to any question, including previously solved ones.
-- Refreshes a catalog of free problems; falls back to 30 starter questions if unavailable.
-- Offers an explicit focus lock: maximized and always on top, no resizing, normal close, or minimize, until a fresh submission is accepted.
-- Optionally reappears on wake / screen unlock. Close hides to the tray when this option is on; tray Quit stops the background process.
-- Supports sign-in launch in a packaged/installed build. Defaults are off.
-- Leaves Task Manager / macOS Force Quit available as the emergency exit.
-
-Wake events are coalesced over 10 seconds. During an active lock, waking preserves the page to avoid erasing code. Otherwise waking chooses a new problem. Focus mode is enabled manually for each session in this preview.
-
-## Acceptance detection
-
-The app observes submission and result responses through Electron's Chromium debugging interface. Only a newly observed `submission_id` followed by its matching successful result (`state: SUCCESS`, `status_code: 10`) counts. Opening an old Accepted page does not unlock. Pending requests from a previous focus session are rejected. Response bodies are processed in memory and never logged or saved.
-
-LeetCode's endpoints are not a supported integration contract and may change. Live login, submission detection, and provider popup flows still need manual verification. Opening DevTools for the embedded page may detach the detector. This is a commitment tool, not an OS kiosk or tamper-proof security boundary.
-
-Remote content has no Node access or app bridge. App controls run in a separate local renderer with a narrow, sender-validated IPC bridge. Navigation is limited to LeetCode and selected login-provider hosts; downloads and browser permission requests are disabled. No passwords are collected by the application UI.
-
-## Validate / package
-
-```sh
 npm test
 npm run pack
 npm run dist
 ```
 
-`pack` produces an unpacked app under `release/`. Windows distribution uses NSIS; macOS uses DMG. Public distribution still needs signing, and macOS needs a Mac build, signing/notarization, and native testing.
+## Focus behavior (0.1.4)
 
-## Manual review checklist
+Focus mode is optional to enable, but requires a password. Its enabled state, salted scrypt password hash, recovery choice, and failed-attempt counter persist in settings.json under Electron's userData directory. Passwords themselves are never saved or returned to the UI.
 
-1. Sign in inside the app; restart and check that login persists.
-2. Browse and switch questions, including solved ones.
-3. Enable focus mode, submit a wrong answer (stay locked), then a fresh Accepted (unlock).
-4. Verify an old Accepted submission does not unlock.
-5. Check offline/reload behavior and emergency force quit.
-6. Enable wake reminders, close to tray, then sleep/wake and lock/unlock the OS.
-7. Install the packaged app, enable sign-in launch, then sign out/in.
-8. On macOS, test Spaces, fullscreen workspaces, minimize, normal quit, and Force Quit.
+While enabled, the app stays maximized, on top, and cannot be resized or minimized. A fresh Accepted submission OR the configurable shortcut followed by the password permits closing for the current session. Neither turns focus mode off. Close and tray Quit both require the password again. Closing to the tray (when wake reminders are enabled), quitting, or reopening resets permission to close.
+
+There is no Exit focus mode button. The shortcut defaults to Ctrl+Shift+U on Windows and Command+Shift+U on Mac. Configure it before enabling persistent focus. Local keyboard handling supports the embedded page when a global shortcut is unavailable.
+
+An optional recovery checkbox is OFF by default. When enabled, ten incorrect password attempts disable persistent focus and clear its password. Correct verification resets the counter. Anyone can intentionally trigger this recovery; this is a commitment tool, not a security boundary. With recovery off, a forgotten password requires manually resetting local app settings. Reinstallation alone does not guarantee settings are removed. Task Manager / Force Quit remain available, but force-quitting does not clear persistent focus.
+
+## Browser and reminders
+
+- Uses sandboxed Chromium, no Node access or app bridge in remote pages.
+- Persistent LeetCode login; Sign in hides after userStatus confirms authentication.
+- Free problem catalog with a 30-question offline fallback collection.
+- Optional wake/unlock reminders and installed-app sign-in launch; defaults off.
+- Close hides to tray when wake reminders are enabled; authenticated Quit stops the app.
+- Navigation limited to LeetCode and selected login providers. Downloads and browser permissions disabled.
+
+The detector captures a new submission ID, observes its result, and also polls that exact ID using the user's browser session. Opening historical Accepted pages does not count. Matching is scoped to the practice session. Connection details show verification progress; code and credentials are not logged.
+
+## Validation status
+
+TypeScript compilation and 15 automated tests pass, including simulated main-process submission, close/password gating, startup, persistent policy, and recovery flows. Windows x64 NSIS packaging is available. Installers are unsigned development previews.
+
+User testing confirmed that the embedded app and LeetCode load. Live acceptance integration, the new persistent-focus flow, OS wake/sign-in behavior, and macOS still require manual verification. Native Electron smoke tests from the development sandbox failed with a GPU subprocess error, so automated tests use a mocked Electron runtime. Mac distribution needs native testing and signing/notarization.
 
 Not affiliated with LeetCode.
-
-## Preview validation status
-
-TypeScript compilation, eleven automated tests, and Windows x64 NSIS packaging pass. The desktop smoke test could not complete inside the development sandbox: Electron's GPU subprocess exits with `0xC0000135` and the local page fails to load. A launch outside that environment is needed to establish whether this is an environment restriction or a desktop runtime issue. No live login, Accepted detection, wake/login launch, or macOS behavior has been verified yet. The installer is an unsigned development preview.
-
-Version 0.1.2 also polls each newly captured submission ID directly, accepts successful HTTP response codes with or without endpoint trailing slashes, and preserves response buffers across navigation. Connection details report capture/check progress without saving code or credentials. Sign in is hidden only after the authenticated LeetCode userStatus query confirms a valid session; Reload is an accessible icon button.
-
-Version 0.1.3 adds a saved, user-configurable emergency shortcut (default Ctrl+Shift+U on Windows, Command+Shift+U on macOS), plus an Exit focus mode button. Both routes use the optional password chosen when starting that focus session. Passwords are never persisted; only a salted scrypt hash is retained in memory and cleared on unlock. Edit the shortcut while unlocked by focusing its field and pressing a combination. Unavailable system shortcuts are rejected. Local keyboard handling and the visible exit button remain available even when global registration is unavailable.

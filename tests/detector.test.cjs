@@ -6,7 +6,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const vm = require('node:vm');
 
-test('fresh submission with HTTP 201 and no trailing slash unlocks via direct result check', async () => {
+test('Accepted and shortcut permit closing while persistent focus and password remain active', async () => {
   const dist = path.resolve(__dirname, '../dist');
   const contents = [];
   const bodies = new Map();
@@ -14,6 +14,8 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
   let window;
   let latest;
   let resultChecks = 0;
+  let saved;
+  let didQuit = false;
   const makeContents = () => {
     const wc = Object.assign(new EventEmitter(), {
       url: '', getURL() { return this.url; }, isDestroyed: () => false, focus() {},
@@ -49,7 +51,7 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
   const app = Object.assign(new EventEmitter(), {
     setName() {}, requestSingleInstanceLock: () => true, isPackaged: false,
     getPath: () => '/nonexistent-test-profile', whenReady: async () => {},
-    exit: code => { throw new Error(`Unexpected exit ${code}`); }
+    quit: () => { didQuit = true; }, exit: code => { throw new Error(`Unexpected exit ${code}`); }
   });
   const electron = { globalShortcut: { register() {}, unregister() {} }, app, BrowserWindow: Window, WebContentsView: View, Tray, powerMonitor: new EventEmitter(),
     ipcMain: { handle: (_channel, handler) => { action = handler; } },
@@ -57,11 +59,16 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
     session: { fromPartition: () => ({ cookies: { on() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, on() {} }) }
   };
   vm.runInNewContext(readFileSync(path.join(dist, 'main.js'), 'utf8'), {
-    require: id => id === 'electron' ? electron : require(id.startsWith('./') ? path.join(dist, id + '.js') : id),
+    require: id => id === 'electron' ? electron : id === 'node:fs' ? {
+      readFileSync: () => { throw new Error('No settings yet'); }, writeFileSync: (_path, data) => { saved = JSON.parse(data); }
+    } : require(id.startsWith('./') ? path.join(dist, id + '.js') : id),
     exports: {}, __dirname: dist, process: { argv: [], platform: 'win32' }, Buffer, URL, AbortSignal, console, setTimeout, clearTimeout
   });
   await new Promise(resolve => setImmediate(resolve));
-  await action({ sender: contents[0], senderFrame: { url: contents[0].url } }, 'lock');
+  const sender = { sender: contents[0], senderFrame: { url: contents[0].url } };
+  await assert.rejects(() => action(sender, 'lock'));
+  await action(sender, 'lock', { password: 'test-password', recovery: false });
+  assert.equal(saved.focus.enabled, true);
   assert.equal(latest.locked, true);
   assert.equal(window.maximized, true);
   assert.equal(window.resizable, false);
@@ -73,21 +80,23 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
   debug.emit('message', {}, 'Network.loadingFinished', { requestId: 'fresh' });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(resultChecks, 1);
-  assert.equal(latest.locked, false);
-  assert.equal(window.resizable, true);
-  assert.equal(window.maximizable, true);
+  assert.equal(latest.locked, true);
+  assert.equal(latest.mayClose, true);
+  assert.equal(window.resizable, false);
+  assert.equal(window.maximizable, false);
   assert.match(latest.status, /Accepted/);
-  const sender = { sender: contents[0], senderFrame: { url: contents[0].url } };
-  await action(sender, 'lock');
   let prevented = false;
   contents[1].emit('before-input-event', { preventDefault: () => { prevented = true; } },
     { type: 'keyDown', key: 'u', control: true, meta: false, shift: true, alt: false, isAutoRepeat: false });
-  assert.equal(prevented, true); assert.equal(latest.locked, false);
-  await action(sender, 'lock', 'test-password');
-  await action(sender, 'emergency');
+  assert.equal(prevented, true); assert.equal(latest.locked, true);
   assert.equal(latest.emergencyRequested, true); assert.equal(latest.locked, true);
   await action(sender, 'emergency-unlock', 'wrong');
   assert.equal(latest.locked, true); assert.match(latest.emergencyError, /Incorrect/);
   await action(sender, 'emergency-unlock', 'test-password');
-  assert.equal(latest.locked, false); assert.equal(latest.passwordProtected, false);
+  assert.equal(latest.locked, true); assert.equal(latest.passwordProtected, true); assert.equal(latest.mayClose, true);
+  window.emit('close', { preventDefault() {} });
+  assert.equal(latest.emergencyRequested, true); assert.equal(didQuit, false);
+  await action(sender, 'emergency-unlock', 'wrong'); assert.equal(didQuit, false);
+  await action(sender, 'emergency-unlock', 'test-password'); assert.equal(didQuit, true);
+  assert.equal(saved.focus.enabled, true);
 });

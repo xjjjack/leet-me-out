@@ -6,6 +6,7 @@ import { AcceptanceTracker, chooseProblem, endpoint, isLeetCode, navigationAllow
 import { applyFocusMode } from './focus';
 import { readSignedIn } from './auth';
 import { EmergencyPassword, validShortcut, matchesShortcut } from './emergency';
+import { FocusPolicy } from './policy';
 
 const testMode = process.argv.includes('--smoke-test');
 const dataDirArg = process.argv.find(v => v.startsWith('--data-dir='));
@@ -27,7 +28,9 @@ let detectorDetail = 'Waiting for a new submission.';
 let signedIn = false;
 let authTimer: ReturnType<typeof setTimeout> | undefined;
 let authGeneration = 0;
-const emergencyPassword = new EmergencyPassword();
+const policy = new FocusPolicy();
+const emergencyPassword = policy.password;
+let exitIntent: 'permit' | 'close' | 'quit' = 'permit';
 let emergencyRequested = false;
 let emergencyError = '';
 let current = '';
@@ -41,11 +44,12 @@ const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 function state() {
   return { locked, status, detector, detectorDetail, signedIn, current, catalog, settings,
     emergencyShortcut: settings.shortcut.replace('CommandOrControl', process.platform === 'darwin' ? 'Command' : 'Control'),
-    emergencyRequested, emergencyError, passwordProtected: emergencyPassword.enabled, packaged: app.isPackaged,
+    emergencyRequested, emergencyError, exitIntent, mayClose: policy.mayClose, recovery: policy.recovery,
+    passwordProtected: emergencyPassword.enabled, packaged: app.isPackaged,
     url: view?.webContents.getURL() || '', canBack: view?.webContents.navigationHistory.canGoBack() || false };
 }
 function update() { if (win && !win.isDestroyed()) win.webContents.send('state', state()); }
-function save() { writeFileSync(settingsPath(), JSON.stringify(settings, null, 2)); }
+function save() { writeFileSync(settingsPath(), JSON.stringify({ ...settings, focus: policy.export() }, null, 2)); }
 function scheduleAuthCheck() {
   const generation = ++authGeneration;
   if (authTimer) clearTimeout(authTimer);
@@ -60,23 +64,44 @@ function show() { if (win.isMinimized()) win.restore(); win.show(); win.focus();
 function lock(value: boolean) {
   locked = value;
   if (value) {
-    // The in-window shortcut and button remain available if another app owns the global shortcut.
+    // In-window shortcut handling remains available if another app owns the global shortcut.
     globalShortcut.register(settings.shortcut, requestEmergencyExit);
   } else {
     globalShortcut.unregister(settings.shortcut);
-    emergencyRequested = false; emergencyError = ''; emergencyPassword.clear();
+    emergencyRequested = false; emergencyError = '';
   }
   applyFocusMode(win, value);
+  win.setClosable(!value || policy.mayClose);
   if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(value, { visibleOnFullScreen: value });
   update();
+  refreshTray();
 }
 function requestEmergencyExit() {
   if (!locked) return;
-  if (!emergencyPassword.enabled) {
-    tracker.reset(); lock(false); status = 'Focus mode ended. Your problem and code are still here.'; update();
-  } else {
-    emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
-  }
+  exitIntent = 'permit';
+  emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
+}
+function grantClose() {
+  policy.accepted();
+  win.setClosable(true); refreshTray(); update();
+}
+function requestClose(intent: 'close' | 'quit') {
+  if (!policy.mayClose) { status = 'Solve a problem or use your shortcut and password before closing.'; show(); update(); return; }
+  exitIntent = intent; emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
+}
+function finishClose() {
+  if (exitIntent === 'close' && settings.wake) {
+    policy.newSession(); tracker.reset(); win.setClosable(false); refreshTray(); update(); win.hide();
+  } else { quitting = true; app.quit(); }
+}
+function refreshTray() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Leet Me Out', click: show },
+    { label: 'Quit', enabled: !locked || policy.mayClose, click: () => {
+      if (locked) requestClose('quit'); else { quitting = true; app.quit(); }
+    } }
+  ]));
 }
 async function navigate(url: string) {
   if (!navigationAllowed(url)) { status = 'That destination is not supported in this practice browser.'; update(); return; }
@@ -109,7 +134,9 @@ async function attachDetector() {
     if (epoch !== tracker.epoch) return;
     if (tracker.observe(url, data, epoch)) {
       detectorDetail = 'Accepted verified for this session.';
-      lock(false); status = 'Accepted! You earned your freedom. Another rep?'; update();
+      if (locked) { grantClose(); status = 'Accepted! Close and Quit are enabled. Your password is still required.'; }
+      else status = 'Accepted! Nice work.';
+      update();
     }
   }
   async function pollSubmission(id: string, epoch: number) {
@@ -195,11 +222,12 @@ function wake() {
   if (!settings.wake || Date.now() - lastWake < 10000) return;
   lastWake = Date.now();
   show();
+  if (locked && policy.mayClose) { policy.newSession(); tracker.reset(); win.setClosable(false); refreshTray(); void random(); }
   if (!locked) { tracker.reset(); void random(); }
 }
 
 async function start() {
-  try { const stored = JSON.parse(readFileSync(settingsPath(), 'utf8')); settings = { wake: stored.wake === true, login: stored.login === true, shortcut: validShortcut(stored.shortcut) ? stored.shortcut : settings.shortcut }; } catch { /* First launch. */ }
+  try { const stored = JSON.parse(readFileSync(settingsPath(), 'utf8')); settings = { wake: stored.wake === true, login: stored.login === true, shortcut: validShortcut(stored.shortcut) ? stored.shortcut : settings.shortcut }; policy.restore(stored.focus); } catch { /* First launch. */ }
   if (app.isPackaged) settings.login = app.getLoginItemSettings().openAtLogin;
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({ title: 'Leet Me Out', width: 1440, height: 920, minWidth: 1000, minHeight: 640,
@@ -237,7 +265,7 @@ async function start() {
   view.webContents.on('render-process-gone', () => { status = 'Browser stopped. Reload to recover, or use Task Manager / Force Quit.'; update(); });
   win.on('close', event => {
     if (quitting) return;
-    if (locked) { event.preventDefault(); show(); }
+    if (locked) { event.preventDefault(); requestClose('close'); }
     else if (settings.wake) { event.preventDefault(); win.hide(); }
   });
   win.on('closed', () => { if (!view.webContents.isDestroyed()) view.webContents.close(); });
@@ -249,10 +277,7 @@ async function start() {
   }
   tray = new Tray(nativeImage.createFromBitmap(pixels, { width: 16, height: 16 }));
   tray.setToolTip('Leet Me Out');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Leet Me Out', click: show },
-    { label: 'Quit', click: () => { if (locked) { show(); return; } quitting = true; app.quit(); } }
-  ]));
+  refreshTray();
   tray.on('click', show);
   ipcMain.handle('action', async (event, name: string, value: unknown) => {
     if (event.sender !== win.webContents || event.senderFrame?.url !== pathToFileURL(uiPath).href) throw new Error('Untrusted request');
@@ -271,19 +296,27 @@ async function start() {
       case 'back': if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack(); break;
       case 'lock':
         if (!locked && detector.startsWith('Ready')) {
-          const password = value === undefined ? '' : value;
-          if (typeof password !== 'string' || password.length > 128) throw new Error('Invalid password');
-          emergencyPassword.set(password);
+          const options = value as { password?: unknown; recovery?: unknown } | undefined;
+          if (typeof options?.password !== 'string' || !options.password || options.password.length > 128) throw new Error('A password is required');
+          const previous = policy.export();
+          policy.enable(options.password, options.recovery === true);
+          try { save(); } catch (error) { policy.restore(previous); throw error; }
           tracker.reset(); detectorDetail = 'Waiting for a new submission.'; status = 'Focus mode on. Get a fresh Accepted on any problem to leave.'; lock(true);
         }
         break;
-      case 'emergency': requestEmergencyExit(); break;
       case 'emergency-cancel': emergencyRequested = false; emergencyError = ''; break;
       case 'emergency-unlock':
         if (locked && emergencyRequested && typeof value === 'string') {
-          if (emergencyPassword.verify(value)) {
-            tracker.reset(); lock(false); status = 'Focus mode ended. Your problem and code are still here.';
-          } else emergencyError = 'Incorrect password. Try again.';
+          const previous = policy.export();
+          const result = policy.verify(value);
+          try { save(); } catch (error) { policy.restore(previous); throw error; }
+          if (result === 'valid') {
+            emergencyRequested = false; emergencyError = '';
+            if (exitIntent === 'permit') { grantClose(); status = 'Close and Quit are enabled. Focus mode remains on; closing still requires your password.'; }
+            else finishClose();
+          } else if (result === 'recovered') {
+            tracker.reset(); lock(false); status = 'Recovery completed. Focus mode is off and its password has been cleared.';
+          } else emergencyError = policy.recovery ? `Incorrect password. ${10 - policy.failures} attempts remain before recovery.` : 'Incorrect password. Try again.';
         }
         break;
       case 'wake':
@@ -299,6 +332,7 @@ async function start() {
     update(); return state();
   });
   await win.loadFile(uiPath);
+  if (policy.enabled && !testMode) { lock(true); status = 'Focus mode is on. Solve a problem or use your shortcut.'; }
   tracker.reset();
   // Create the browser's renderer by navigating before enabling CDP Network.
   // Detector initialization must never block the initial question or wake handlers.
@@ -321,7 +355,7 @@ async function start() {
   } else { void refreshCatalog(); }
 }
 
-app.on('before-quit', event => { if (locked) { event.preventDefault(); show(); } else quitting = true; });
+app.on('before-quit', event => { if (quitting) return; if (locked) { event.preventDefault(); requestClose('quit'); } else quitting = true; });
 app.on('window-all-closed', () => app.quit());
 app.on('activate', () => { if (win && !win.isDestroyed()) show(); });
 app.on('second-instance', () => { if (win && !win.isDestroyed()) show(); });

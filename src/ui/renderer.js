@@ -10,12 +10,13 @@ el('lock').addEventListener('click', () => confirm.showModal());
 el('cancel').addEventListener('click', () => confirm.close());
 el('confirm-lock').addEventListener('click', async () => {
   const password = el('focus-password').value;
+  if (!password) { el('password-error').textContent = 'Set a password before enabling persistent focus mode.'; return; }
   if (password !== el('focus-password-confirm').value) { el('password-error').textContent = 'Passwords do not match.'; return; }
-  await act('lock', password);
+  try { await api.action('lock', { password, recovery: el('recovery').checked }); }
+  catch { el('password-error').textContent = 'Could not save focus settings. Please try again.'; return; }
   el('focus-password').value = ''; el('focus-password-confirm').value = ''; el('password-error').textContent = ''; confirm.close();
 });
 confirm.addEventListener('close', () => { el('focus-password').value = ''; el('focus-password-confirm').value = ''; el('password-error').textContent = ''; });
-el('emergency').addEventListener('click', () => act('emergency'));
 el('exit-cancel').addEventListener('click', () => act('emergency-cancel'));
 el('emergency-dialog').addEventListener('cancel', event => { event.preventDefault(); void act('emergency-cancel'); });
 el('emergency-form').addEventListener('submit', async event => {
@@ -40,14 +41,14 @@ api.onState(state => {
   el('exit-shortcut').textContent = state.emergencyShortcut;
   el('shortcut').value = state.emergencyShortcut;
   el('shortcut').disabled = state.locked;
-  el('emergency').hidden = !state.locked;
   const exitDialog = el('emergency-dialog');
   if (state.emergencyRequested && !exitDialog.open) { exitDialog.showModal(); el('exit-password').focus(); }
   if (!state.emergencyRequested && exitDialog.open) { exitDialog.close(); el('exit-password').value = ''; }
   el('exit-error').textContent = state.emergencyError;
+  el('exit-description').textContent = state.exitIntent === 'permit' ? 'Enter your password to enable Close and Quit. Focus mode will remain on.' : 'Enter your password to close. Focus mode will be active again when you reopen.';
   el('badge').textContent = state.locked ? 'ON' : 'OFF';
-  el('focus-title').textContent = state.locked ? 'You’ve got this.' : 'Make yourself a deal.';
-  el('focus-copy').textContent = state.locked ? 'One new Accepted unlocks the window. Any problem counts.' : 'Stay here until your next Accepted. Switch problems whenever you want.';
+  el('focus-title').textContent = state.locked ? (state.mayClose ? 'Ready to close.' : 'You’ve got this.') : 'Make yourself a deal.';
+  el('focus-copy').textContent = state.locked ? (state.mayClose ? 'Close and Quit are enabled. Your password is still required. Focus mode stays on.' : 'A fresh Accepted or your shortcut and password enables closing. Focus mode persists across restarts.') : 'Practice on every launch. Use a password to protect closing.';
   el('lock').textContent = state.locked ? 'Locked in · keep going' : 'Lock in →';
   el('lock').disabled = state.locked || !state.detector.startsWith('Ready');
   el('startup').checked = state.settings.login;
