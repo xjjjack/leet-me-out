@@ -299,7 +299,7 @@ async function start() {
           const options = value as { password?: unknown; recovery?: unknown } | undefined;
           if (typeof options?.password !== 'string' || !options.password || options.password.length > 128) throw new Error('A password is required');
           const previous = policy.export();
-          policy.enable(options.password, options.recovery === true);
+          policy.enable(options.password);
           try { save(); } catch (error) { policy.restore(previous); throw error; }
           tracker.reset(); detectorDetail = 'Waiting for a new submission.'; status = 'Focus mode on. Get a fresh Accepted on any problem to leave.'; lock(true);
         }

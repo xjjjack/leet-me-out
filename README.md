@@ -22,7 +22,7 @@ While enabled, the app stays maximized, on top, and cannot be resized or minimiz
 
 There is no Exit focus mode button. The shortcut defaults to Ctrl+Shift+U on Windows and Command+Shift+U on Mac. Configure it before enabling persistent focus. Local keyboard handling supports the embedded page when a global shortcut is unavailable.
 
-An optional recovery checkbox is OFF by default. When enabled, ten incorrect password attempts disable persistent focus and clear its password. Correct verification resets the counter. Anyone can intentionally trigger this recovery; this is a commitment tool, not a security boundary. With recovery off, a forgotten password requires manually resetting local app settings. Reinstallation alone does not guarantee settings are removed. Task Manager / Force Quit remain available, but force-quitting does not clear persistent focus.
+Forgotten-password recovery is always available: ten incorrect attempts disable focus mode and clear its password. A correct password resets the counter; failed attempts persist across restarts. This deliberate recovery route is part of the commitment design. Task Manager / Force Quit remain available, but force-quitting does not clear persistent focus.
 
 ## Browser and reminders
 

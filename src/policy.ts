@@ -6,9 +6,9 @@ export class FocusPolicy {
   mayClose = false;
   recovery = false;
   failures = 0;
-  enable(password: string, recovery: boolean) {
+  enable(password: string) {
     if (!password || password.length > 128) throw new Error('A password is required');
-    this.password.set(password); this.enabled = true; this.mayClose = false; this.recovery = recovery; this.failures = 0;
+    this.password.set(password); this.enabled = true; this.mayClose = false; this.recovery = true; this.failures = 0;
   }
   accepted() { if (this.enabled) this.mayClose = true; }
   newSession() { this.mayClose = false; }
@@ -27,7 +27,7 @@ export class FocusPolicy {
     if (!value || typeof value !== 'object') return;
     const stored = value as Record<string, unknown>;
     if (stored.enabled === true && this.password.restore(stored.credential)) {
-      this.enabled = true; this.recovery = stored.recovery === true;
+      this.enabled = true; this.recovery = true;
       this.failures = typeof stored.failures === 'number' && Number.isInteger(stored.failures) ? Math.max(0, Math.min(9, stored.failures)) : 0;
     }
   }

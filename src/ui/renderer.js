@@ -12,7 +12,7 @@ el('confirm-lock').addEventListener('click', async () => {
   const password = el('focus-password').value;
   if (!password) { el('password-error').textContent = 'Set a password before enabling persistent focus mode.'; return; }
   if (password !== el('focus-password-confirm').value) { el('password-error').textContent = 'Passwords do not match.'; return; }
-  try { await api.action('lock', { password, recovery: el('recovery').checked }); }
+  try { await api.action('lock', { password }); }
   catch { el('password-error').textContent = 'Could not save focus settings. Please try again.'; return; }
   el('focus-password').value = ''; el('focus-password-confirm').value = ''; el('password-error').textContent = ''; confirm.close();
 });
