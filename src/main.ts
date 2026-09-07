@@ -322,10 +322,10 @@ async function start() {
         }
         break;
       case 'wake':
-        if (!locked && typeof value === 'boolean') { settings.wake = value; save(); }
+        if (typeof value === 'boolean') { settings.wake = value; save(); }
         break;
       case 'startup':
-        if (!locked && app.isPackaged && typeof value === 'boolean') {
+        if (app.isPackaged && typeof value === 'boolean') {
           app.setLoginItemSettings({ openAtLogin: value }); settings.login = app.getLoginItemSettings().openAtLogin; save();
         }
         break;

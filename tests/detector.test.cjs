@@ -16,6 +16,7 @@ test('Accepted and shortcut permit closing while persistent focus and password r
   let resultChecks = 0;
   let saved;
   let didQuit = false;
+  let loginSetting = false;
   const makeContents = () => {
     const wc = Object.assign(new EventEmitter(), {
       url: '', getURL() { return this.url; }, isDestroyed: () => false, focus() {},
@@ -49,7 +50,9 @@ test('Accepted and shortcut permit closing while persistent focus and password r
   class View { webContents = makeContents(); setBounds() {} }
   class Tray extends EventEmitter { setToolTip() {} setContextMenu() {} }
   const app = Object.assign(new EventEmitter(), {
-    setName() {}, requestSingleInstanceLock: () => true, isPackaged: false,
+    setName() {}, requestSingleInstanceLock: () => true, isPackaged: true,
+    getLoginItemSettings: () => ({openAtLogin: loginSetting}),
+    setLoginItemSettings: value => { loginSetting = value.openAtLogin; },
     getPath: () => '/nonexistent-test-profile', whenReady: async () => {},
     quit: () => { didQuit = true; }, exit: code => { throw new Error(`Unexpected exit ${code}`); }
   });
@@ -69,6 +72,11 @@ test('Accepted and shortcut permit closing while persistent focus and password r
   await assert.rejects(() => action(sender, 'lock'));
   await action(sender, 'lock', { password: 'test-password', recovery: false });
   assert.equal(saved.focus.enabled, true);
+  assert.equal(latest.locked, true);
+  await action(sender, 'wake', true); assert.equal(saved.wake, true);
+  await action(sender, 'startup', true); assert.equal(loginSetting, true); assert.equal(saved.login, true);
+  await action(sender, 'wake', false); assert.equal(saved.wake, false);
+  await action(sender, 'startup', false); assert.equal(loginSetting, false); assert.equal(saved.login, false);
   assert.equal(latest.locked, true);
   assert.equal(window.maximized, true);
   assert.equal(window.resizable, false);

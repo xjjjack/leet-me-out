@@ -14,7 +14,7 @@ npm run pack
 npm run dist
 ```
 
-## Focus behavior (0.1.5)
+## Focus behavior (0.1.6)
 
 Focus mode is optional to enable, but requires a password. Its enabled state, salted scrypt password hash, recovery choice, and failed-attempt counter persist in settings.json under Electron's userData directory. Passwords themselves are never saved or returned to the UI.
 
@@ -22,7 +22,7 @@ While enabled, the app stays maximized, on top, and cannot be resized or minimiz
 
 Quit focus mode is disabled until a problem is solved in the current session. The shortcut grants close permission only; it does not enable that button. The shortcut defaults to Ctrl+Shift+U on Windows and Command+Shift+U on Mac. Configure it before enabling persistent focus. Local keyboard handling supports the embedded page when a global shortcut is unavailable.
 
-Forgotten-password recovery is always available: ten incorrect attempts disable focus mode and clear its password. A correct password resets the counter; failed attempts persist across restarts. This deliberate recovery route is part of the commitment design. Task Manager / Force Quit remain available, but force-quitting does not clear persistent focus.
+Forgotten-password recovery is always available: ten incorrect attempts (including empty submissions) disable focus mode and clear its password. A correct password resets the counter; failed attempts persist across restarts. This deliberate recovery route is part of the commitment design. Task Manager / Force Quit remain available, but force-quitting does not clear persistent focus.
 
 ## Browser and reminders
 
@@ -37,8 +37,10 @@ The detector captures a new submission ID, observes its result, and also polls t
 
 ## Validation status
 
-TypeScript compilation and 16 automated tests pass, including simulated main-process submission, close/password gating, startup, persistent policy, and recovery flows. Windows x64 NSIS packaging is available. Installers are unsigned development previews.
+TypeScript compilation and 17 automated tests pass, including simulated main-process submission, close/password gating, startup, persistent policy, and recovery flows. Windows x64 NSIS packaging is available. Installers are unsigned development previews.
 
 User testing confirmed that the embedded app and LeetCode load. Live acceptance integration, the new persistent-focus flow, OS wake/sign-in behavior, and macOS still require manual verification. Native Electron smoke tests from the development sandbox failed with a GPU subprocess error, so automated tests use a mocked Electron runtime. Mac distribution needs native testing and signing/notarization.
 
 Not affiliated with LeetCode.
+
+Sign-in launch and wake/unlock reminder settings remain editable while focus mode is active.

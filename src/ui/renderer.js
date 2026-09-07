@@ -55,10 +55,10 @@ api.onState(state => {
   el('lock').textContent = state.locked ? 'Locked in · keep going' : 'Lock in →';
   el('lock').disabled = state.locked || !state.detector.startsWith('Ready');
   el('startup').checked = state.settings.login;
-  el('startup').disabled = state.locked || !state.packaged;
+  el('startup').disabled = !state.packaged;
   el('startup-note').hidden = state.packaged;
   el('wake').checked = state.settings.wake;
-  el('wake').disabled = state.locked;
+  el('wake').disabled = false;
   el('back').disabled = !state.canBack;
   el('login').hidden = state.signedIn === true;
   for (const id of ['status', 'detector', 'detectorDetail', 'catalog', 'url']) el(id).textContent = state[id];

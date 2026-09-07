@@ -34,3 +34,9 @@ test('shortcut permission never counts as solving and is consumed on a new sessi
   p.newSession(); assert.equal(p.mayClose, false); assert.equal(p.solved, false);
   assert.equal(p.enabled, true);
 });
+test('ten empty password submissions recover focus mode', () => {
+  const p = new FocusPolicy(); p.enable('practice');
+  for (let i = 0; i < 9; i++) assert.equal(p.verify(''), 'invalid');
+  assert.equal(p.enabled, true);
+  assert.equal(p.verify(''), 'recovered'); assert.equal(p.enabled, false);
+});
