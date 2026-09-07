@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'">
+  <title>Leet Me Out</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside>
+    <header><div class="logo">L<span>↗</span></div><div><strong>leet me out</strong><small>ONE PROBLEM. THEN FREEDOM.</small></div></header>
+    <section class="intro"><span class="eyebrow">YOUR DAILY ESCAPE PLAN</span><h1>A little practice.<br>A lot of progress.</h1><p>Start anywhere. Repeat a favorite.<br>Every rep counts.</p></section>
+    <button id="random" class="primary">↻ &nbsp; Random problem <span>↗</span></button>
+    <button id="browse" class="secondary">Browse all problems <span>→</span></button>
+    <div id="catalog" class="caption">Starter collection · 30 problems</div>
+    <section class="focus-card">
+      <div class="card-top"><span class="eyebrow">FOCUS MODE</span><span id="badge">OFF</span></div>
+      <h2 id="focus-title">Make yourself a deal.</h2>
+      <p id="focus-copy">Stay here until your next Accepted. Switch problems whenever you want.</p>
+      <button id="lock" class="focus-button">Lock in →</button>
+      <div class="escape">Emergency exit: Task Manager on Windows or Force Quit on Mac.</div>
+    </section>
+    <section class="settings"><span class="eyebrow">BUILD THE HABIT</span>
+      <label><span>Open when I sign in</span><input id="startup" type="checkbox" role="switch"></label>
+      <small id="startup-note">Available in the installed app.</small>
+      <label><span>Open on wake / unlock</span><input id="wake" type="checkbox" role="switch"></label>
+      <small>When enabled, closing keeps the app in the tray. Quit there to stop wake reminders.</small>
+    </section>
+    <footer><div class="browser-tools"><button id="back" title="Go back">←</button><button id="reload">Reload</button><button id="login">Sign in</button></div><div id="status" role="status">Loading your next problem…</div><details><summary>Connection details</summary><p id="detector"></p><p id="url"></p></details><span class="version">LEET ME OUT / EARLY PREVIEW 0.1</span></footer>
+  </aside>
+  <main><div class="placeholder">Your practice space is loading…</div></main>
+  <dialog id="confirm"><span class="eyebrow">ONE ACCEPTED AWAY</span><h2>Ready to lock in?</h2><p>The window stays on top and cannot be closed or minimized until a new submission is accepted. Any problem counts, including one you solved before.</p><p>Submission detection is experimental in this preview. If it fails, use Task Manager or Force Quit.</p><div class="dialog-actions"><button id="cancel">Not yet</button><button id="confirm-lock" class="primary">Let’s do this</button></div></dialog>
+  <script src="renderer.js"></script>
+</body>
+</html>
