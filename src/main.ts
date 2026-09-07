@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AcceptanceTracker, chooseProblem, endpoint, isLeetCode, navigationAllowed, starterProblems } from './core';
+import { applyFocusMode } from './focus';
+import { readSignedIn } from './auth';
 
 const testMode = process.argv.includes('--smoke-test');
 const dataDirArg = process.argv.find(v => v.startsWith('--data-dir='));
@@ -20,6 +22,10 @@ let locked = false;
 let quitting = false;
 let status = 'Pick a problem. Earn your freedom.';
 let detector = 'Connecting';
+let detectorDetail = 'Waiting for a new submission.';
+let signedIn = false;
+let authTimer: ReturnType<typeof setTimeout> | undefined;
+let authGeneration = 0;
 let current = '';
 let pool = [...starterProblems];
 let catalog = 'Starter collection · 30 problems';
@@ -29,17 +35,25 @@ const uiPath = path.join(__dirname, 'ui/index.html');
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 
 function state() {
-  return { locked, status, detector, current, catalog, settings, packaged: app.isPackaged,
+  return { locked, status, detector, detectorDetail, signedIn, current, catalog, settings, packaged: app.isPackaged,
     url: view?.webContents.getURL() || '', canBack: view?.webContents.navigationHistory.canGoBack() || false };
 }
 function update() { if (win && !win.isDestroyed()) win.webContents.send('state', state()); }
 function save() { writeFileSync(settingsPath(), JSON.stringify(settings, null, 2)); }
+function scheduleAuthCheck() {
+  const generation = ++authGeneration;
+  if (authTimer) clearTimeout(authTimer);
+  authTimer = setTimeout(() => {
+    void readSignedIn(view.webContents.session).then(result => {
+      if (generation !== authGeneration || view.webContents.isDestroyed()) return;
+      signedIn = result === true; update();
+    });
+  }, 500);
+}
 function show() { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 function lock(value: boolean) {
   locked = value;
-  win.setAlwaysOnTop(value, 'floating');
-  win.setMinimizable(!value);
-  win.setClosable(!value);
+  applyFocusMode(win, value);
   if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(value, { visibleOnFullScreen: value });
   update();
 }
@@ -69,6 +83,40 @@ async function refreshCatalog() {
 async function attachDetector() {
   const wc = view.webContents;
   const requests = new Map<string, { url: string; epoch: number; response: boolean }>();
+  const polling = new Set<string>();
+  function consume(url: string, data: unknown, epoch: number) {
+    if (epoch !== tracker.epoch) return;
+    if (tracker.observe(url, data, epoch)) {
+      detectorDetail = 'Accepted verified for this session.';
+      lock(false); status = 'Accepted! You earned your freedom. Another rep?'; update();
+    }
+  }
+  async function pollSubmission(id: string, epoch: number) {
+    const key = `${epoch}:${id}`;
+    if (polling.has(key)) return;
+    polling.add(key);
+    const url = `https://leetcode.com/submissions/detail/${id}/check/`;
+    try {
+      for (let attempt = 0; attempt < 60 && epoch === tracker.epoch && !wc.isDestroyed(); attempt++) {
+        try {
+          const response = await wc.session.fetch(url, { signal: AbortSignal.timeout(8000) });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json() as { state?: string; status_code?: number; status_msg?: string };
+          if (epoch !== tracker.epoch) return;
+          detectorDetail = `Submission ${id}: ${data.status_msg || data.state || 'checking'}`;
+          consume(url, data, epoch); update();
+          if (data.state === 'SUCCESS') return;
+        } catch {
+          if (epoch !== tracker.epoch || wc.isDestroyed()) return;
+          detectorDetail = `Submission ${id}: result check failed; retrying.`; update();
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      if (epoch === tracker.epoch && !wc.isDestroyed()) {
+        detectorDetail = `Submission ${id}: verification timed out. Submit again to retry.`; update();
+      }
+    } finally { polling.delete(key); }
+  }
   try {
     wc.debugger.attach('1.3');
     wc.debugger.on('message', (_event, method, params) => {
@@ -76,10 +124,16 @@ async function attachDetector() {
         const route = endpoint(params.request.url);
         if (route && (route.kind !== 'submit' || params.request.method === 'POST'))
           requests.set(params.requestId, { url: params.request.url, epoch: tracker.epoch, response: false });
+        if (route?.kind === 'submit' && params.request.method === 'POST') {
+          detectorDetail = 'Submission sent; waiting for its ID.'; update();
+        }
       }
       if (method === 'Network.responseReceived') {
         const item = requests.get(params.requestId);
-        if (item) item.response = params.response.status === 200;
+        if (item) {
+          item.response = params.response.status >= 200 && params.response.status < 300;
+          if (!item.response) { detectorDetail = `Submission endpoint returned HTTP ${params.response.status}.`; update(); }
+        }
       }
       if (method === 'Network.loadingFailed') requests.delete(params.requestId);
       if (method === 'Network.loadingFinished') {
@@ -88,17 +142,23 @@ async function attachDetector() {
         if (!item?.response) return;
         void wc.debugger.sendCommand('Network.getResponseBody', { requestId: params.requestId }).then(result => {
           const body = result.base64Encoded ? Buffer.from(result.body, 'base64').toString('utf8') : result.body;
-          if (tracker.observe(item.url, JSON.parse(body), item.epoch)) {
-            lock(false); status = 'Accepted! You earned your freedom. Another rep?'; update();
+          const data = JSON.parse(body);
+          consume(item.url, data, item.epoch);
+          if (endpoint(item.url)?.kind === 'submit' && item.epoch === tracker.epoch) {
+            const id = String(data.submission_id ?? '');
+            if (/^\d+$/.test(id)) {
+              detectorDetail = `Submission ${id}: checking result.`; update();
+              void pollSubmission(id, item.epoch);
+            } else { detectorDetail = 'Submission response did not include an ID.'; update(); }
           }
-        }).catch(() => { detector = 'Could not read a submission result. Reload and try again.'; update(); });
+        }).catch(() => { detectorDetail = `Could not read ${endpoint(item.url)?.kind || 'submission'} response. Reload and submit again.`; update(); });
       }
     });
     wc.debugger.on('detach', () => { detector = 'Disconnected — restart before using focus lock'; update(); });
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
-        wc.debugger.sendCommand('Network.enable'),
+        wc.debugger.sendCommand('Network.enable', { maxTotalBufferSize: 16000000, maxResourceBufferSize: 2000000, enableDurableMessages: true }),
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(() => reject(new Error('Detector initialization timed out')), 10000);
         })
@@ -125,19 +185,24 @@ async function start() {
     backgroundColor: '#11151a', show: !testMode,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true } });
   const ses = session.fromPartition('persist:leetcode');
+  ses.cookies.on('changed', (_event, cookie) => {
+    if (cookie.name === 'LEETCODE_SESSION' && /(^|\.)leetcode\.com$/.test(cookie.domain ?? '')) scheduleAuthCheck();
+  });
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.on('will-download', event => event.preventDefault());
   view = new WebContentsView({ webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false } });
   win.contentView.addChildView(view);
   resize(); win.on('resize', resize);
+  win.on('unmaximize', () => { if (locked) win.maximize(); });
+  win.on('will-resize', event => { if (locked) event.preventDefault(); });
   win.webContents.on('will-navigate', event => event.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   view.webContents.on('will-navigate', (event, url) => { if (!navigationAllowed(url)) event.preventDefault(); });
   view.webContents.on('will-redirect', (event, url) => { if (!navigationAllowed(url)) event.preventDefault(); });
   view.webContents.setWindowOpenHandler(({ url }) => { if (navigationAllowed(url)) void navigate(url); return { action: 'deny' }; });
-  view.webContents.on('did-navigate', () => update());
-  view.webContents.on('did-navigate-in-page', () => update());
+  view.webContents.on('did-navigate', () => { update(); scheduleAuthCheck(); });
+  view.webContents.on('did-navigate-in-page', () => { update(); scheduleAuthCheck(); });
   view.webContents.on('did-fail-load', (_e, code, _desc, _url, mainFrame) => {
     if (mainFrame && code !== -3) { status = 'Page unavailable. Check your connection and Reload.'; update(); }
   });
@@ -171,7 +236,7 @@ async function start() {
       case 'reload': view.webContents.reload(); break;
       case 'back': if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack(); break;
       case 'lock':
-        if (!locked && detector.startsWith('Ready')) { tracker.reset(); status = 'Focus mode on. Get a fresh Accepted on any problem to leave.'; lock(true); }
+        if (!locked && detector.startsWith('Ready')) { tracker.reset(); detectorDetail = 'Waiting for a new submission.'; status = 'Focus mode on. Get a fresh Accepted on any problem to leave.'; lock(true); }
         break;
       case 'wake':
         if (!locked && typeof value === 'boolean') { settings.wake = value; save(); }

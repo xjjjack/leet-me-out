@@ -36,12 +36,12 @@ test('actual main startup navigates and registers wake events even when detector
     app, BrowserWindow: Window, WebContentsView: View, Tray, powerMonitor,
     ipcMain: { handle() {} }, Menu: { setApplicationMenu() {}, buildFromTemplate: () => [] },
     nativeImage: { createFromBitmap() {} },
-    session: { fromPartition: () => ({ setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, on() {} }) }
+    session: { fromPartition: () => ({ cookies: { on() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, on() {} }) }
   };
   const timers = [];
   const dist = path.resolve(__dirname, '../dist');
   vm.runInNewContext(readFileSync(path.join(dist, 'main.js'), 'utf8'), {
-    require: id => id === 'electron' ? electron : require(id === './core' ? path.join(dist, 'core.js') : id),
+    require: id => id === 'electron' ? electron : require(id.startsWith('./') ? path.join(dist, id + '.js') : id),
     exports: {}, __dirname: dist, process: { argv: [], platform: 'win32' }, Buffer, URL, AbortSignal, console,
     setTimeout: callback => { timers.push(callback); return timers.length; }, clearTimeout() {}
   });

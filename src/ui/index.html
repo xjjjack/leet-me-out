@@ -27,10 +27,10 @@
       <label><span>Open on wake / unlock</span><input id="wake" type="checkbox" role="switch"></label>
       <small>When enabled, closing keeps the app in the tray. Quit there to stop wake reminders.</small>
     </section>
-    <footer><div class="browser-tools"><button id="back" title="Go back">←</button><button id="reload">Reload</button><button id="login">Sign in</button></div><div id="status" role="status">Loading your next problem…</div><details><summary>Connection details</summary><p id="detector"></p><p id="url"></p></details><span class="version">LEET ME OUT / EARLY PREVIEW 0.1.1</span></footer>
+    <footer><div class="browser-tools"><button id="back" title="Go back">←</button><button id="reload" title="Reload page" aria-label="Reload page">↻</button><button id="login">Sign in</button></div><div id="status" role="status">Loading your next problem…</div><details><summary>Connection details</summary><p id="detector"></p><p id="detectorDetail"></p><p id="url"></p></details><span class="version">LEET ME OUT / EARLY PREVIEW 0.1.2</span></footer>
   </aside>
   <main><div class="placeholder">Your practice space is loading…</div></main>
-  <dialog id="confirm"><span class="eyebrow">ONE ACCEPTED AWAY</span><h2>Ready to lock in?</h2><p>The window stays on top and cannot be closed or minimized until a new submission is accepted. Any problem counts, including one you solved before.</p><p>Submission detection is experimental in this preview. If it fails, use Task Manager or Force Quit.</p><div class="dialog-actions"><button id="cancel">Not yet</button><button id="confirm-lock" class="primary">Let’s do this</button></div></dialog>
+  <dialog id="confirm"><span class="eyebrow">ONE ACCEPTED AWAY</span><h2>Ready to lock in?</h2><p>The window maximizes, stays on top, and cannot be resized, closed, or minimized until a new submission is accepted. Any problem counts, including one you solved before.</p><p>Submission detection is experimental in this preview. If it fails, use Task Manager or Force Quit.</p><div class="dialog-actions"><button id="cancel">Not yet</button><button id="confirm-lock" class="primary">Let’s do this</button></div></dialog>
   <script src="renderer.js"></script>
 </body>
 </html>

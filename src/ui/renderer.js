@@ -25,5 +25,6 @@ api.onState(state => {
   el('wake').checked = state.settings.wake;
   el('wake').disabled = state.locked;
   el('back').disabled = !state.canBack;
-  for (const id of ['status', 'detector', 'catalog', 'url']) el(id).textContent = state[id];
+  el('login').hidden = state.signedIn === true;
+  for (const id of ['status', 'detector', 'detectorDetail', 'catalog', 'url']) el(id).textContent = state[id];
 });

@@ -15,8 +15,8 @@ export function navigationAllowed(raw: string): boolean {
 export function endpoint(raw: string): { kind: 'submit' | 'check'; id?: string } | null {
   if (!isLeetCode(raw)) return null;
   const path = new URL(raw).pathname;
-  if (/^\/problems\/[a-z0-9-]+\/submit\/$/.test(path)) return { kind: 'submit' };
-  const match = path.match(/^\/submissions\/detail\/(\d+)\/check\/$/);
+  if (/^\/problems\/[a-z0-9-]+\/submit\/?$/.test(path)) return { kind: 'submit' };
+  const match = path.match(/^\/submissions\/detail\/(\d+)\/check\/?$/);
   return match ? { kind: 'check', id: match[1] } : null;
 }
 

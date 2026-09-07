@@ -18,7 +18,7 @@ npm start
 - Opens a random problem in an isolated Chromium browser, with persistent LeetCode login.
 - Lets you browse to any question, including previously solved ones.
 - Refreshes a catalog of free problems; falls back to 30 starter questions if unavailable.
-- Offers an explicit focus lock: always on top, no normal close or minimize, until a fresh submission is accepted.
+- Offers an explicit focus lock: maximized and always on top, no resizing, normal close, or minimize, until a fresh submission is accepted.
 - Optionally reappears on wake / screen unlock. Close hides to the tray when this option is on; tray Quit stops the background process.
 - Supports sign-in launch in a packaged/installed build. Defaults are off.
 - Leaves Task Manager / macOS Force Quit available as the emergency exit.
@@ -58,4 +58,6 @@ Not affiliated with LeetCode.
 
 ## Preview validation status
 
-TypeScript compilation, six automated tests, and Windows x64 NSIS packaging pass. The desktop smoke test could not complete inside the development sandbox: Electron's GPU subprocess exits with `0xC0000135` and the local page fails to load. A launch outside that environment is needed to establish whether this is an environment restriction or a desktop runtime issue. No live login, Accepted detection, wake/login launch, or macOS behavior has been verified yet. The installer is an unsigned development preview.
+TypeScript compilation, nine automated tests, and Windows x64 NSIS packaging pass. The desktop smoke test could not complete inside the development sandbox: Electron's GPU subprocess exits with `0xC0000135` and the local page fails to load. A launch outside that environment is needed to establish whether this is an environment restriction or a desktop runtime issue. No live login, Accepted detection, wake/login launch, or macOS behavior has been verified yet. The installer is an unsigned development preview.
+
+Version 0.1.2 also polls each newly captured submission ID directly, accepts successful HTTP response codes with or without endpoint trailing slashes, and preserves response buffers across navigation. Connection details report capture/check progress without saving code or credentials. Sign in is hidden only after the authenticated LeetCode userStatus query confirms a valid session; Reload is an accessible icon button.
