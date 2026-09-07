@@ -58,4 +58,4 @@ Not affiliated with LeetCode.
 
 ## Preview validation status
 
-TypeScript compilation, five automated logic tests, and Windows x64 NSIS packaging pass. The desktop smoke test could not complete inside the development sandbox: Electron's GPU subprocess exits with `0xC0000135` and the local page fails to load. A launch outside that environment is needed to establish whether this is an environment restriction or a desktop runtime issue. No live login, Accepted detection, wake/login launch, or macOS behavior has been verified yet. The installer is an unsigned development preview.
+TypeScript compilation, six automated tests, and Windows x64 NSIS packaging pass. The desktop smoke test could not complete inside the development sandbox: Electron's GPU subprocess exits with `0xC0000135` and the local page fails to load. A launch outside that environment is needed to establish whether this is an environment restriction or a desktop runtime issue. No live login, Accepted detection, wake/login launch, or macOS behavior has been verified yet. The installer is an unsigned development preview.

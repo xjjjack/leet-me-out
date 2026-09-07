@@ -95,7 +95,15 @@ async function attachDetector() {
       }
     });
     wc.debugger.on('detach', () => { detector = 'Disconnected — restart before using focus lock'; update(); });
-    await wc.debugger.sendCommand('Network.enable');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        wc.debugger.sendCommand('Network.enable'),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error('Detector initialization timed out')), 10000);
+        })
+      ]);
+    } finally { if (timeout) clearTimeout(timeout); }
     detector = 'Ready · live LeetCode verification pending';
   } catch { detector = 'Unavailable — restart before using focus lock'; }
   update();
@@ -178,10 +186,15 @@ async function start() {
     update(); return state();
   });
   await win.loadFile(uiPath);
-  await attachDetector();
   tracker.reset();
+  // Create the browser's renderer by navigating before enabling CDP Network.
+  // Detector initialization must never block the initial question or wake handlers.
+  const firstPage = testMode ? view.webContents.loadURL('about:blank') : random();
+  const detectorReady = attachDetector();
+  powerMonitor.on('resume', wake);
+  powerMonitor.on('unlock-screen', wake);
   if (testMode) {
-    await view.webContents.loadURL('about:blank');
+    await Promise.all([firstPage, detectorReady]);
     console.log('SMOKE: window, sandboxed browser, IPC, and detector initialized');
     const snapshot = await win.webContents.executeJavaScript('({title: document.title, buttons: document.querySelectorAll("button").length, bridge: typeof window.practice.action})');
     console.log('SMOKE:', JSON.stringify(snapshot));
@@ -192,9 +205,7 @@ async function start() {
     lock(false);
     console.log('SMOKE: focus lock and unlock passed');
     quitting = true; app.quit();
-  } else { void random(); void refreshCatalog(); }
-  powerMonitor.on('resume', wake);
-  powerMonitor.on('unlock-screen', wake);
+  } else { void refreshCatalog(); }
 }
 
 app.on('before-quit', event => { if (locked) { event.preventDefault(); show(); } else quitting = true; });
