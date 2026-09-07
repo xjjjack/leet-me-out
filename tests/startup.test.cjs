@@ -32,7 +32,7 @@ test('actual main startup navigates and registers wake events even when detector
     exit: code => { throw new Error(`Unexpected app exit ${code}`); }
   });
   const powerMonitor = new EventEmitter();
-  const electron = {
+  const electron = { globalShortcut: { register() {}, unregister() {} },
     app, BrowserWindow: Window, WebContentsView: View, Tray, powerMonitor,
     ipcMain: { handle() {} }, Menu: { setApplicationMenu() {}, buildFromTemplate: () => [] },
     nativeImage: { createFromBitmap() {} },

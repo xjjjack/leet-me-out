@@ -16,7 +16,7 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
   let resultChecks = 0;
   const makeContents = () => {
     const wc = Object.assign(new EventEmitter(), {
-      url: '', getURL() { return this.url; }, isDestroyed: () => false,
+      url: '', getURL() { return this.url; }, isDestroyed: () => false, focus() {},
       send: (_channel, state) => { latest = state; }, setWindowOpenHandler() {},
       navigationHistory: { canGoBack: () => false },
       async loadURL(url) { this.url = url; },
@@ -40,6 +40,7 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
     setResizable(value) { this.resizable = value; }
     setMaximizable(value) { this.maximizable = value; }
     setFullScreenable() {} setAlwaysOnTop() {} setMinimizable() {} setClosable() {}
+    isMinimized() { return false; } show() {} focus() {}
     getContentSize() { return [1440, 920]; } isDestroyed() { return false; }
     async loadFile(file) { this.webContents.url = pathToFileURL(file).href; }
   }
@@ -50,7 +51,7 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
     getPath: () => '/nonexistent-test-profile', whenReady: async () => {},
     exit: code => { throw new Error(`Unexpected exit ${code}`); }
   });
-  const electron = { app, BrowserWindow: Window, WebContentsView: View, Tray, powerMonitor: new EventEmitter(),
+  const electron = { globalShortcut: { register() {}, unregister() {} }, app, BrowserWindow: Window, WebContentsView: View, Tray, powerMonitor: new EventEmitter(),
     ipcMain: { handle: (_channel, handler) => { action = handler; } },
     Menu: { setApplicationMenu() {}, buildFromTemplate: () => [] }, nativeImage: { createFromBitmap() {} },
     session: { fromPartition: () => ({ cookies: { on() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {}, on() {} }) }
@@ -76,4 +77,17 @@ test('fresh submission with HTTP 201 and no trailing slash unlocks via direct re
   assert.equal(window.resizable, true);
   assert.equal(window.maximizable, true);
   assert.match(latest.status, /Accepted/);
+  const sender = { sender: contents[0], senderFrame: { url: contents[0].url } };
+  await action(sender, 'lock');
+  let prevented = false;
+  contents[1].emit('before-input-event', { preventDefault: () => { prevented = true; } },
+    { type: 'keyDown', key: 'u', control: true, meta: false, shift: true, alt: false, isAutoRepeat: false });
+  assert.equal(prevented, true); assert.equal(latest.locked, false);
+  await action(sender, 'lock', 'test-password');
+  await action(sender, 'emergency');
+  assert.equal(latest.emergencyRequested, true); assert.equal(latest.locked, true);
+  await action(sender, 'emergency-unlock', 'wrong');
+  assert.equal(latest.locked, true); assert.match(latest.emergencyError, /Incorrect/);
+  await action(sender, 'emergency-unlock', 'test-password');
+  assert.equal(latest.locked, false); assert.equal(latest.passwordProtected, false);
 });

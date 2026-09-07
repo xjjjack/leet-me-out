@@ -1,10 +1,11 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, session, powerMonitor, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, WebContentsView, ipcMain, session, powerMonitor, Menu, Tray, nativeImage, globalShortcut } from 'electron';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AcceptanceTracker, chooseProblem, endpoint, isLeetCode, navigationAllowed, starterProblems } from './core';
 import { applyFocusMode } from './focus';
 import { readSignedIn } from './auth';
+import { EmergencyPassword, validShortcut, matchesShortcut } from './emergency';
 
 const testMode = process.argv.includes('--smoke-test');
 const dataDirArg = process.argv.find(v => v.startsWith('--data-dir='));
@@ -13,8 +14,8 @@ app.setName('Leet Me Out');
 const single = app.requestSingleInstanceLock();
 if (!single) app.quit();
 
-type Settings = { wake: boolean; login: boolean };
-let settings: Settings = { wake: false, login: false };
+type Settings = { wake: boolean; login: boolean; shortcut: string };
+let settings: Settings = { wake: false, login: false, shortcut: 'CommandOrControl+Shift+U' };
 let win: BrowserWindow;
 let view: WebContentsView;
 let tray: Tray;
@@ -26,6 +27,9 @@ let detectorDetail = 'Waiting for a new submission.';
 let signedIn = false;
 let authTimer: ReturnType<typeof setTimeout> | undefined;
 let authGeneration = 0;
+const emergencyPassword = new EmergencyPassword();
+let emergencyRequested = false;
+let emergencyError = '';
 let current = '';
 let pool = [...starterProblems];
 let catalog = 'Starter collection · 30 problems';
@@ -35,7 +39,9 @@ const uiPath = path.join(__dirname, 'ui/index.html');
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 
 function state() {
-  return { locked, status, detector, detectorDetail, signedIn, current, catalog, settings, packaged: app.isPackaged,
+  return { locked, status, detector, detectorDetail, signedIn, current, catalog, settings,
+    emergencyShortcut: settings.shortcut.replace('CommandOrControl', process.platform === 'darwin' ? 'Command' : 'Control'),
+    emergencyRequested, emergencyError, passwordProtected: emergencyPassword.enabled, packaged: app.isPackaged,
     url: view?.webContents.getURL() || '', canBack: view?.webContents.navigationHistory.canGoBack() || false };
 }
 function update() { if (win && !win.isDestroyed()) win.webContents.send('state', state()); }
@@ -53,9 +59,24 @@ function scheduleAuthCheck() {
 function show() { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 function lock(value: boolean) {
   locked = value;
+  if (value) {
+    // The in-window shortcut and button remain available if another app owns the global shortcut.
+    globalShortcut.register(settings.shortcut, requestEmergencyExit);
+  } else {
+    globalShortcut.unregister(settings.shortcut);
+    emergencyRequested = false; emergencyError = ''; emergencyPassword.clear();
+  }
   applyFocusMode(win, value);
   if (process.platform === 'darwin') win.setVisibleOnAllWorkspaces(value, { visibleOnFullScreen: value });
   update();
+}
+function requestEmergencyExit() {
+  if (!locked) return;
+  if (!emergencyPassword.enabled) {
+    tracker.reset(); lock(false); status = 'Focus mode ended. Your problem and code are still here.'; update();
+  } else {
+    emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
+  }
 }
 async function navigate(url: string) {
   if (!navigationAllowed(url)) { status = 'That destination is not supported in this practice browser.'; update(); return; }
@@ -178,7 +199,7 @@ function wake() {
 }
 
 async function start() {
-  try { const stored = JSON.parse(readFileSync(settingsPath(), 'utf8')); settings = { wake: stored.wake === true, login: stored.login === true }; } catch { /* First launch. */ }
+  try { const stored = JSON.parse(readFileSync(settingsPath(), 'utf8')); settings = { wake: stored.wake === true, login: stored.login === true, shortcut: validShortcut(stored.shortcut) ? stored.shortcut : settings.shortcut }; } catch { /* First launch. */ }
   if (app.isPackaged) settings.login = app.getLoginItemSettings().openAtLogin;
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({ title: 'Leet Me Out', width: 1440, height: 920, minWidth: 1000, minHeight: 640,
@@ -194,6 +215,13 @@ async function start() {
   view = new WebContentsView({ webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false } });
   win.contentView.addChildView(view);
   resize(); win.on('resize', resize);
+  for (const contents of [win.webContents, view.webContents]) {
+    contents.on('before-input-event', (event, input) => {
+      if (locked && input.type === 'keyDown' && !input.isAutoRepeat && matchesShortcut(settings.shortcut, input, process.platform === 'darwin')) {
+        event.preventDefault(); requestEmergencyExit();
+      }
+    });
+  }
   win.on('unmaximize', () => { if (locked) win.maximize(); });
   win.on('will-resize', event => { if (locked) event.preventDefault(); });
   win.webContents.on('will-navigate', event => event.preventDefault());
@@ -230,13 +258,33 @@ async function start() {
     if (event.sender !== win.webContents || event.senderFrame?.url !== pathToFileURL(uiPath).href) throw new Error('Untrusted request');
     switch (name) {
       case 'state': break;
+      case 'shortcut':
+        if (!locked && validShortcut(value)) {
+          if (!globalShortcut.register(value, () => {})) throw new Error('Shortcut is unavailable');
+          globalShortcut.unregister(value); settings.shortcut = value; save();
+        } else throw new Error('Invalid shortcut');
+        break;
       case 'random': await random(); break;
       case 'browse': await navigate('https://leetcode.com/problemset/'); break;
       case 'login': await navigate('https://leetcode.com/accounts/login/'); break;
       case 'reload': view.webContents.reload(); break;
       case 'back': if (view.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack(); break;
       case 'lock':
-        if (!locked && detector.startsWith('Ready')) { tracker.reset(); detectorDetail = 'Waiting for a new submission.'; status = 'Focus mode on. Get a fresh Accepted on any problem to leave.'; lock(true); }
+        if (!locked && detector.startsWith('Ready')) {
+          const password = value === undefined ? '' : value;
+          if (typeof password !== 'string' || password.length > 128) throw new Error('Invalid password');
+          emergencyPassword.set(password);
+          tracker.reset(); detectorDetail = 'Waiting for a new submission.'; status = 'Focus mode on. Get a fresh Accepted on any problem to leave.'; lock(true);
+        }
+        break;
+      case 'emergency': requestEmergencyExit(); break;
+      case 'emergency-cancel': emergencyRequested = false; emergencyError = ''; break;
+      case 'emergency-unlock':
+        if (locked && emergencyRequested && typeof value === 'string') {
+          if (emergencyPassword.verify(value)) {
+            tracker.reset(); lock(false); status = 'Focus mode ended. Your problem and code are still here.';
+          } else emergencyError = 'Incorrect password. Try again.';
+        }
         break;
       case 'wake':
         if (!locked && typeof value === 'boolean') { settings.wake = value; save(); }
