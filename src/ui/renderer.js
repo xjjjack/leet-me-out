@@ -7,6 +7,7 @@ async function act(name, value) {
 }
 for (const id of ['random', 'browse', 'login', 'reload', 'back']) el(id).addEventListener('click', () => act(id));
 el('lock').addEventListener('click', () => confirm.showModal());
+el('quit-focus').addEventListener('click', () => act('quit-focus'));
 el('cancel').addEventListener('click', () => confirm.close());
 el('confirm-lock').addEventListener('click', async () => {
   const password = el('focus-password').value;
@@ -45,10 +46,12 @@ api.onState(state => {
   if (state.emergencyRequested && !exitDialog.open) { exitDialog.showModal(); el('exit-password').focus(); }
   if (!state.emergencyRequested && exitDialog.open) { exitDialog.close(); el('exit-password').value = ''; }
   el('exit-error').textContent = state.emergencyError;
-  el('exit-description').textContent = state.exitIntent === 'permit' ? 'Enter your password to enable Close and Quit. Focus mode will remain on.' : 'Enter your password to close. Focus mode will be active again when you reopen.';
+  el('exit-description').textContent = state.exitIntent === 'permit' ? 'Enter your password to allow closing once. Focus mode will remain on.' : 'Enter your password to turn off persistent focus mode.';
+  el('quit-focus').hidden = !state.locked;
+  el('quit-focus').disabled = !state.solved;
   el('badge').textContent = state.locked ? 'ON' : 'OFF';
   el('focus-title').textContent = state.locked ? (state.mayClose ? 'Ready to close.' : 'You’ve got this.') : 'Make yourself a deal.';
-  el('focus-copy').textContent = state.locked ? (state.mayClose ? 'Close and Quit are enabled. Your password is still required. Focus mode stays on.' : 'A fresh Accepted or your shortcut and password enables closing. Focus mode persists across restarts.') : 'Practice on every launch. Use a password to protect closing.';
+  el('focus-copy').textContent = state.locked ? (state.mayClose ? 'You can close without a password. Focus mode stays on for next time.' : 'A fresh Accepted or your shortcut and password permits closing once. Solve a problem to enable Quit focus mode.') : 'Practice on every launch. Focus mode remembers your commitment.';
   el('lock').textContent = state.locked ? 'Locked in · keep going' : 'Lock in →';
   el('lock').disabled = state.locked || !state.detector.startsWith('Ready');
   el('startup').checked = state.settings.login;

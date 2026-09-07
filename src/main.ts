@@ -30,7 +30,7 @@ let authTimer: ReturnType<typeof setTimeout> | undefined;
 let authGeneration = 0;
 const policy = new FocusPolicy();
 const emergencyPassword = policy.password;
-let exitIntent: 'permit' | 'close' | 'quit' = 'permit';
+let exitIntent: 'permit' | 'disable' = 'permit';
 let emergencyRequested = false;
 let emergencyError = '';
 let current = '';
@@ -44,7 +44,7 @@ const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 function state() {
   return { locked, status, detector, detectorDetail, signedIn, current, catalog, settings,
     emergencyShortcut: settings.shortcut.replace('CommandOrControl', process.platform === 'darwin' ? 'Command' : 'Control'),
-    emergencyRequested, emergencyError, exitIntent, mayClose: policy.mayClose, recovery: policy.recovery,
+    emergencyRequested, emergencyError, exitIntent, mayClose: policy.mayClose, solved: policy.solved, recovery: policy.recovery,
     passwordProtected: emergencyPassword.enabled, packaged: app.isPackaged,
     url: view?.webContents.getURL() || '', canBack: view?.webContents.navigationHistory.canGoBack() || false };
 }
@@ -82,24 +82,20 @@ function requestEmergencyExit() {
   emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
 }
 function grantClose() {
-  policy.accepted();
+  policy.permitClose();
   win.setClosable(true); refreshTray(); update();
 }
-function requestClose(intent: 'close' | 'quit') {
-  if (!policy.mayClose) { status = 'Solve a problem or use your shortcut and password before closing.'; show(); update(); return; }
-  exitIntent = intent; emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
-}
-function finishClose() {
-  if (exitIntent === 'close' && settings.wake) {
-    policy.newSession(); tracker.reset(); win.setClosable(false); refreshTray(); update(); win.hide();
-  } else { quitting = true; app.quit(); }
+function requestQuitFocus() {
+  if (!locked || !policy.solved) return;
+  exitIntent = 'disable'; emergencyRequested = true; emergencyError = ''; show(); win.webContents.focus(); update();
 }
 function refreshTray() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Leet Me Out', click: show },
-    { label: 'Quit', enabled: !locked || policy.mayClose, click: () => {
-      if (locked) requestClose('quit'); else { quitting = true; app.quit(); }
+    { label: 'Quit focus mode', enabled: locked && policy.solved, click: requestQuitFocus },
+    { label: 'Quit app', enabled: !locked || policy.mayClose, click: () => {
+      if (!locked || policy.mayClose) { quitting = true; app.quit(); }
     } }
   ]));
 }
@@ -134,7 +130,7 @@ async function attachDetector() {
     if (epoch !== tracker.epoch) return;
     if (tracker.observe(url, data, epoch)) {
       detectorDetail = 'Accepted verified for this session.';
-      if (locked) { grantClose(); status = 'Accepted! Close and Quit are enabled. Your password is still required.'; }
+      if (locked) { policy.accepted(); grantClose(); status = 'Accepted! You can close without a password, or use Quit focus mode with your password.'; }
       else status = 'Accepted! Nice work.';
       update();
     }
@@ -265,8 +261,12 @@ async function start() {
   view.webContents.on('render-process-gone', () => { status = 'Browser stopped. Reload to recover, or use Task Manager / Force Quit.'; update(); });
   win.on('close', event => {
     if (quitting) return;
-    if (locked) { event.preventDefault(); requestClose('close'); }
-    else if (settings.wake) { event.preventDefault(); win.hide(); }
+    if (locked && !policy.mayClose) { event.preventDefault(); show(); return; }
+    if (settings.wake) {
+      event.preventDefault();
+      if (locked) { policy.newSession(); tracker.reset(); win.setClosable(false); refreshTray(); update(); }
+      win.hide();
+    } else quitting = true;
   });
   win.on('closed', () => { if (!view.webContents.isDestroyed()) view.webContents.close(); });
   // A small native tray icon; remains available while the window is hidden.
@@ -283,6 +283,7 @@ async function start() {
     if (event.sender !== win.webContents || event.senderFrame?.url !== pathToFileURL(uiPath).href) throw new Error('Untrusted request');
     switch (name) {
       case 'state': break;
+      case 'quit-focus': requestQuitFocus(); break;
       case 'shortcut':
         if (!locked && validShortcut(value)) {
           if (!globalShortcut.register(value, () => {})) throw new Error('Shortcut is unavailable');
@@ -309,11 +310,12 @@ async function start() {
         if (locked && emergencyRequested && typeof value === 'string') {
           const previous = policy.export();
           const result = policy.verify(value);
+          if (result === 'valid' && exitIntent === 'disable' && policy.solved) policy.disable();
           try { save(); } catch (error) { policy.restore(previous); throw error; }
           if (result === 'valid') {
             emergencyRequested = false; emergencyError = '';
-            if (exitIntent === 'permit') { grantClose(); status = 'Close and Quit are enabled. Focus mode remains on; closing still requires your password.'; }
-            else finishClose();
+            if (exitIntent === 'permit') { grantClose(); status = 'You can close once without another password. Focus mode stays on for your next launch.'; }
+            else if (!policy.enabled) { tracker.reset(); lock(false); status = 'Focus mode is off.'; }
           } else if (result === 'recovered') {
             tracker.reset(); lock(false); status = 'Recovery completed. Focus mode is off and its password has been cleared.';
           } else emergencyError = policy.recovery ? `Incorrect password. ${10 - policy.failures} attempts remain before recovery.` : 'Incorrect password. Try again.';
@@ -355,7 +357,7 @@ async function start() {
   } else { void refreshCatalog(); }
 }
 
-app.on('before-quit', event => { if (quitting) return; if (locked) { event.preventDefault(); requestClose('quit'); } else quitting = true; });
+app.on('before-quit', event => { if (quitting) return; if (locked && !policy.mayClose) { event.preventDefault(); show(); } else quitting = true; });
 app.on('window-all-closed', () => app.quit());
 app.on('activate', () => { if (win && !win.isDestroyed()) show(); });
 app.on('second-instance', () => { if (win && !win.isDestroyed()) show(); });

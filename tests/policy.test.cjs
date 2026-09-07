@@ -27,3 +27,10 @@ test('correct password resets the recovery counter without switching focus off',
   const p = new FocusPolicy(); p.enable('practice'); p.verify('wrong');
   assert.equal(p.verify('practice'), 'valid'); assert.equal(p.failures, 0); assert.equal(p.enabled, true);
 });
+test('shortcut permission never counts as solving and is consumed on a new session', () => {
+  const p = new FocusPolicy(); p.enable('practice'); p.permitClose();
+  assert.equal(p.mayClose, true); assert.equal(p.solved, false);
+  p.accepted(); assert.equal(p.solved, true);
+  p.newSession(); assert.equal(p.mayClose, false); assert.equal(p.solved, false);
+  assert.equal(p.enabled, true);
+});

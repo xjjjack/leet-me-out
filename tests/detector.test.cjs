@@ -73,6 +73,13 @@ test('Accepted and shortcut permit closing while persistent focus and password r
   assert.equal(window.maximized, true);
   assert.equal(window.resizable, false);
   assert.equal(window.maximizable, false);
+  await action(sender, 'quit-focus');
+  assert.equal(latest.emergencyRequested, false);
+  contents[1].emit('before-input-event', { preventDefault() {} },
+    { type: 'keyDown', key: 'u', control: true, meta: false, shift: true, alt: false, isAutoRepeat: false });
+  await action(sender, 'emergency-unlock', 'test-password');
+  assert.equal(latest.mayClose, true); assert.equal(latest.solved, false);
+  await action(sender, 'quit-focus'); assert.equal(latest.emergencyRequested, false);
   const debug = contents[1].debugger;
   bodies.set('fresh', { submission_id: 123 });
   debug.emit('message', {}, 'Network.requestWillBeSent', { requestId: 'fresh', request: { method: 'POST', url: 'https://leetcode.com/problems/two-sum/submit' } });
@@ -94,9 +101,12 @@ test('Accepted and shortcut permit closing while persistent focus and password r
   assert.equal(latest.locked, true); assert.match(latest.emergencyError, /Incorrect/);
   await action(sender, 'emergency-unlock', 'test-password');
   assert.equal(latest.locked, true); assert.equal(latest.passwordProtected, true); assert.equal(latest.mayClose, true);
-  window.emit('close', { preventDefault() {} });
-  assert.equal(latest.emergencyRequested, true); assert.equal(didQuit, false);
-  await action(sender, 'emergency-unlock', 'wrong'); assert.equal(didQuit, false);
-  await action(sender, 'emergency-unlock', 'test-password'); assert.equal(didQuit, true);
+  let closePrevented = false;
+  window.emit('close', { preventDefault() { closePrevented = true; } });
+  assert.equal(closePrevented, false); assert.equal(latest.emergencyRequested, false);
   assert.equal(saved.focus.enabled, true);
+  await action(sender, 'quit-focus'); assert.equal(latest.emergencyRequested, true);
+  await action(sender, 'emergency-unlock', 'wrong'); assert.equal(latest.locked, true);
+  await action(sender, 'emergency-unlock', 'test-password');
+  assert.equal(latest.locked, false); assert.equal(saved.focus.enabled, false);
 });
